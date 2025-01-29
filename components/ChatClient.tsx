@@ -90,10 +90,7 @@ export function ChatClient({ modelName }: { modelName: string }) {
   const [suggestionsAbortController, setSuggestionsAbortController] = useState<AbortController | null>(null);
 
   // Add new state
-  const [enableSuggestions, setEnableSuggestions] = useState(() => {
-    const saved = localStorage.getItem('enableSuggestions');
-    return saved ? JSON.parse(saved) : true;
-  });
+  const [enableSuggestions, setEnableSuggestions] = useState(true); // Default value without localStorage
 
   const [isCheckboxDisabled, setIsCheckboxDisabled] = useState(false);
 
@@ -392,6 +389,15 @@ export function ChatClient({ modelName }: { modelName: string }) {
   useEffect(() => {
     localStorage.setItem('enableSuggestions', JSON.stringify(enableSuggestions));
   }, [enableSuggestions]);
+
+  // Add this useEffect below other useEffect hooks:
+  useEffect(() => {
+    // Check localStorage after component mounts
+    const saved = localStorage.getItem('enableSuggestions');
+    if (saved !== null) {
+      setEnableSuggestions(JSON.parse(saved));
+    }
+  }, []); // Empty dependency array means this runs once on mount
 
   // UI Components
   return (
