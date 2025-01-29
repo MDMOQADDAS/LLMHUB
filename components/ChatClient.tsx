@@ -1,7 +1,7 @@
 "use client";
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useSearchParams } from "next/navigation";
-import { Send, Loader2, Bot, User, Copy, Check, StopCircle, RotateCcw, Share2, Download } from 'lucide-react';
+import { Send, Loader2, Bot, User, Copy, Check, StopCircle, RotateCcw, Share2, Download, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -46,6 +46,7 @@ export function ChatClient({ modelName }: { modelName: string }) {
   const [promptSuggestions, setPromptSuggestions] = useState<PromptSuggestion[]>([]);
   const [isSuggestionsLoading, setIsSuggestionsLoading] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [suggestionsAbortController, setSuggestionsAbortController] = useState<AbortController | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -137,7 +138,7 @@ export function ChatClient({ modelName }: { modelName: string }) {
   };
 
   // Add new helper function for API calls
-  const makeAPICall = async (prompt: string, systemPrompt: string, streamCallback?: (content: string) => void) => {
+  const makeAPICall = async (prompt: string, systemPrompt: string, signal?: AbortSignal, streamCallback?: (content: string) => void) => {
     const response = await fetch('http://localhost:11434/api/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -149,6 +150,7 @@ export function ChatClient({ modelName }: { modelName: string }) {
         max_tokens: settings.maxTokens,
         stream: true,
       }),
+      signal, // Add abort signal
     });
   
     let result = '';
@@ -191,6 +193,12 @@ export function ChatClient({ modelName }: { modelName: string }) {
   
     const assistantMessageId = crypto.randomUUID();
 
+    const mainController = new AbortController();
+    const suggestionsController = new AbortController();
+    
+    setAbortController(mainController);
+    setSuggestionsAbortController(suggestionsController);
+
     // Initialize assistant message immediately
     setMessages(prev => [...prev, 
       userMessage,
@@ -211,6 +219,7 @@ export function ChatClient({ modelName }: { modelName: string }) {
       const mainCall = makeAPICall(
         input,
         settings.systemPrompt,
+        mainController.signal,
         (content) => {
           // Update main chat message in real-time
           setMessages(prev => prev.map(msg =>
@@ -223,7 +232,8 @@ export function ChatClient({ modelName }: { modelName: string }) {
   
       const suggestionsCall = makeAPICall(
         `Rewrite the following prompt in 10 different ways to get better results. Return only the numbered list of prompts in plain text:\n\n${input}`,
-        "You are an AI prompt engineer. Your task is to improve and rewrite prompts."
+        "You are an AI prompt engineer. Your task is to improve and rewrite prompts.",
+        suggestionsController.signal
       ).then(result => {
         const suggestions = result
           .split('\n')
@@ -240,18 +250,25 @@ export function ChatClient({ modelName }: { modelName: string }) {
       // Execute both calls concurrently
       await Promise.all([mainCall, suggestionsCall]);
     } catch (error) {
-      console.error('Error:', error);
-      toast.error('Failed to process request');
+      if ((error as Error).name === 'AbortError') {
+        toast.info('Generation stopped');
+      } else {
+        console.error('Error:', error);
+        toast.error('Failed to process request');
+      }
     } finally {
       setIsLoading(false);
       setIsSuggestionsLoading(false);
+      setAbortController(null);
+      setSuggestionsAbortController(null);
     }
   };
 
-  // Add suggestion click handler
+  // Modify suggestion click handler to only update input
   const handleSuggestionClick = (suggestion: PromptSuggestion) => {
     setInput(suggestion.prompt);
-    handleSubmit();
+    // Focus the textarea after setting input
+    textareaRef.current?.focus();
   };
 
   // UI Components
@@ -280,8 +297,13 @@ export function ChatClient({ modelName }: { modelName: string }) {
               onClick={() => setShowSuggestions(s => !s)}
               className="w-full p-2 flex items-center justify-between hover:bg-gray-100 rounded-lg transition-colors"
             >
-              Prompt Suggestions
-              {isSuggestionsLoading && <Loader2 className="w-4 h-4 animate-spin" />}
+              <span>Prompt Suggestions</span>
+              <div className="flex items-center gap-2">
+                {isSuggestionsLoading && <Loader2 className="w-4 h-4 animate-spin" />}
+                <ChevronDown 
+                  className={`w-4 h-4 transition-transform ${showSuggestions ? 'rotate-180' : ''}`}
+                />
+              </div>
             </button>
             
             {showSuggestions && promptSuggestions.length > 0 && (
@@ -295,9 +317,11 @@ export function ChatClient({ modelName }: { modelName: string }) {
                   <button
                     key={suggestion.id}
                     onClick={() => handleSuggestionClick(suggestion)}
-                    className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 truncate"
+                    className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 truncate group"
                   >
-                    {suggestion.prompt}
+                    <span className="text-gray-600 group-hover:text-purple-600 transition-colors">
+                      {suggestion.prompt}
+                    </span>
                   </button>
                 ))}
               </motion.div>
@@ -383,7 +407,10 @@ export function ChatClient({ modelName }: { modelName: string }) {
                 {isLoading && (
                   <button
                     type="button"
-                    onClick={() => abortController?.abort()}
+                    onClick={() => {
+                      abortController?.abort();
+                      suggestionsAbortController?.abort();
+                    }}
                     className="p-2 rounded-lg text-red-600 hover:bg-red-50"
                   >
                     <StopCircle className="w-5 h-5" />
