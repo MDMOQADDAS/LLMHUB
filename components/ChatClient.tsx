@@ -1,72 +1,90 @@
 "use client";
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useSearchParams } from "next/navigation";
-import { Send, Loader2, Bot, User } from 'lucide-react';
+import { Send, Loader2, Bot, User, Copy, Check, StopCircle, RotateCcw, Share2, Download } from 'lucide-react';
+import { toast } from 'sonner';
+import { useHotkeys } from 'react-hotkeys-hook';
+import { motion, AnimatePresence } from 'framer-motion';
+import ReactMarkdown from 'react-markdown';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
 interface Message {
-  role: 'user' | 'assistant';
+  id: string;
+  role: 'user' | 'assistant' | 'system';
   content: string;
+  timestamp: number;
 }
 
-interface ChatClientProps {
-  modelName: string;
+interface ChatSettings {
+  temperature: number;
+  maxTokens: number;
+  systemPrompt: string;
 }
 
-export function ChatClient({ modelName }: ChatClientProps) {
+export function ChatClient({ modelName }: { modelName: string }) {
   const searchParams = useSearchParams();
   const version = searchParams.get("version") || "default";
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [settings, setSettings] = useState<ChatSettings>({
+    temperature: 0.7,
+    maxTokens: 2048,
+    systemPrompt: "You are a helpful AI assistant.",
+  });
+  const [showSettings, setShowSettings] = useState(false);
+  const [abortController, setAbortController] = useState<AbortController | null>(null);
+  
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  // Keyboard shortcuts
+  useHotkeys('ctrl+enter', (keyboardEvent) => {
+    keyboardEvent.preventDefault();
+    handleSubmit();
+  });
+  useHotkeys('esc', () => setShowSettings(false));
+
+  // Handle file uploads for context
+  const handleFileUpload = async (file: File) => {
+    const text = await file.text();
+    setMessages(prev => [...prev, {
+      id: crypto.randomUUID(),
+      role: 'system',
+      content: `Context from file ${file.name}:\n${text}`,
+      timestamp: Date.now()
+    }]);
   };
 
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+  // Export chat history
+  const exportChat = () => {
+    const chatHistory = JSON.stringify(messages, null, 2);
+    const blob = new Blob([chatHistory], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `chat-history-${new Date().toISOString()}.json`;
+    a.click();
+  };
 
-  // Auto-resize textarea
-  useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'inherit';
-      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
-    }
-  }, [input]);
+  // Stream handling with abort capability
+  const handleStream = async (response: Response) => {
+    if (!response.body) throw new Error('No response body');
+    
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let assistantMessage = '';
+    const messageId = crypto.randomUUID();
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim() || isLoading) return;
-
-    const userMessage: Message = { role: 'user', content: input };
-    setMessages(prev => [...prev, userMessage]);
-    setInput('');
-    setIsLoading(true);
+    setMessages(prev => [...prev, {
+      id: messageId,
+      role: 'assistant',
+      content: '',
+      timestamp: Date.now()
+    }]);
 
     try {
-      const response = await fetch('http://localhost:11434/api/generate', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: `${modelName.toLowerCase()}:${version}`,
-          prompt: input,
-          stream: true,
-        }),
-      });
-
-      if (!response.body) throw new Error('No response body');
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let assistantMessage = '';
-
-      setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
-
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -80,256 +98,203 @@ export function ChatClient({ modelName }: ChatClientProps) {
             const parsed = JSON.parse(line);
             assistantMessage += parsed.response;
             
-            setMessages(prev => [
-              ...prev.slice(0, -1),
-              { role: 'assistant', content: assistantMessage }
-            ]);
+            setMessages(prev => prev.map(msg => 
+              msg.id === messageId 
+                ? { ...msg, content: assistantMessage }
+                : msg
+            ));
           } catch (e) {
             console.error('Error parsing JSON:', e);
           }
         }
       }
     } catch (error) {
+      if ((error as Error).name === 'AbortError') {
+        toast.info('Response generation stopped');
+      } else {
+        throw error;
+      }
+    }
+  };
+
+  const handleSubmit = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!input.trim() || isLoading) return;
+
+    const controller = new AbortController();
+    setAbortController(controller);
+
+    const userMessage: Message = {
+      id: crypto.randomUUID(),
+      role: 'user',
+      content: input,
+      timestamp: Date.now()
+    };
+
+    setMessages(prev => [...prev, userMessage]);
+    setInput('');
+    setIsLoading(true);
+
+    try {
+      const response = await fetch('http://localhost:11434/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: `${modelName.toLowerCase()}:${version}`,
+          prompt: input,
+          system: settings.systemPrompt,
+          temperature: settings.temperature,
+          max_tokens: settings.maxTokens,
+          stream: true,
+        }),
+        signal: controller.signal
+      });
+
+      await handleStream(response);
+    } catch (error) {
       console.error('Error:', error);
-      setMessages(prev => [...prev, { 
-        role: 'assistant', 
-        content: 'Sorry, there was an error processing your request.' 
-      }]);
+      toast.error('Failed to generate response');
     } finally {
       setIsLoading(false);
+      setAbortController(null);
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSubmit(e);
-    }
-  };
-
+  // UI Components
   return (
-    <div className="flex flex-col h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white border-b px-6 py-4 shadow-sm">
-        <h1 className="text-xl font-semibold text-gray-800">
-          Chat with {modelName} ({version})
-        </h1>
-      </div>
-
-      {/* Messages Container */}
-      <div className="flex-1 overflow-y-auto px-4 py-6">
-        <div className="max-w-3xl mx-auto space-y-6">
-          {messages.map((message, index) => (
-            <div
-              key={index}
-              className={`flex items-start space-x-3 ${
-                message.role === 'user' ? 'justify-end' : 'justify-start'
-              }`}
+    <motion.div 
+      className="flex flex-col h-screen bg-gray-50"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+    >
+      {/* Enhanced Header */}
+      <header className="border-b bg-white py-4 px-6 shadow-sm">
+        <div className="max-w-6xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <h1 className="text-2xl font-semibold text-gray-800">LLMHUB</h1>
+            <span className="px-3 py-1 rounded-full bg-purple-100 text-purple-700 text-sm">
+              {modelName} ({version})
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowSettings(s => !s)}
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
             >
-              {message.role === 'assistant' && (
-                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
-                  <Bot className="w-5 h-5 text-blue-600" />
-                </div>
-              )}
-              <div
-                className={`rounded-2xl px-4 py-2 max-w-[85%] ${
-                  message.role === 'user'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-white border border-gray-200 text-gray-800'
+              Settings
+            </button>
+            <button
+              onClick={exportChat}
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <Download className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* Settings Modal */}
+      <AnimatePresence>
+        {showSettings && (
+          <motion.div
+            className="absolute inset-0 bg-black/50 flex items-center justify-center z-50"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            {/* Settings content */}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Enhanced Messages Container */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-6xl mx-auto py-6 px-6 space-y-6">
+          <AnimatePresence>
+            {messages.map((message) => (
+              <motion.div
+                key={message.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                className={`flex items-start space-x-4 ${
+                  message.role === 'user' ? 'justify-end' : 'justify-start'
                 }`}
               >
-                <p className="whitespace-pre-wrap text-sm leading-relaxed">
-                  {message.content}
-                </p>
-              </div>
-              {message.role === 'user' && (
-                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center">
-                  <User className="w-5 h-5 text-white" />
+                {/* Message content with Markdown support */}
+                <div className={`rounded-2xl px-6 py-3 max-w-[85%] ${
+                  message.role === 'user'
+                    ? 'bg-purple-600 text-white'
+                    : 'bg-gray-50 text-gray-800'
+                }`}>
+                  <ReactMarkdown
+                    components={{
+                      code({ inline, className, children, ...props }: { inline?: boolean, className?: string, children?: React.ReactNode }) {
+                        const match = /language-(\w+)/.exec(className || '');
+                        return !inline && match ? (
+                          <SyntaxHighlighter
+                            language={match[1]}
+                            style={atomDark as any}
+                            PreTag="div"
+                            {...(props as any)}
+                          >
+                            {String(children).replace(/\n$/, '')}
+                          </SyntaxHighlighter>
+                        ) : (
+                          <code className={className} {...props}>
+                            {children}
+                          </code>
+                        );
+                      }
+                    }}
+                  >
+                    {message.content}
+                  </ReactMarkdown>
                 </div>
-              )}
-            </div>
-          ))}
+              </motion.div>
+            ))}
+          </AnimatePresence>
           <div ref={messagesEndRef} />
         </div>
       </div>
 
-      {/* Input Container */}
-      <div className="border-t bg-white px-4 py-4">
-        <div className="max-w-3xl mx-auto">
+      {/* Enhanced Input Container */}
+      <div className="border-t bg-white px-6 py-4">
+        <div className="max-w-6xl mx-auto">
           <form onSubmit={handleSubmit} className="relative">
             <textarea
               ref={textareaRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Send a message..."
-              rows={1}
-              className="w-full pl-4 pr-12 py-3 text-sm bg-gray-100 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
-              style={{ maxHeight: '200px' }}
+              placeholder="Message... (Ctrl + Enter to send)"
+              className="w-full pl-6 pr-24 py-4 text-base bg-white border border-gray-200 rounded-2xl resize-none focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+              style={{ minHeight: '60px' }}
             />
-            <button
-              type="submit"
-              disabled={isLoading || !input.trim()}
-              className="absolute right-2 bottom-2.5 p-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              {isLoading ? (
-                <Loader2 className="w-5 h-5 animate-spin" />
-              ) : (
-                <Send className="w-5 h-5" />
+            <div className="absolute right-3 bottom-3 flex items-center gap-2">
+              {isLoading && (
+                <button
+                  type="button"
+                  onClick={() => abortController?.abort()}
+                  className="p-2.5 rounded-xl text-red-600 hover:bg-red-50"
+                >
+                  <StopCircle className="w-5 h-5" />
+                </button>
               )}
-            </button>
+              <button
+                type="submit"
+                disabled={isLoading || !input.trim()}
+                className="p-2.5 rounded-xl bg-purple-600 text-white hover:bg-purple-700 disabled:bg-gray-300 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-purple-500 transition-colors"
+              >
+                {isLoading ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <Send className="w-5 h-5" />
+                )}
+              </button>
+            </div>
           </form>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }
-
-
-// "use client";
-// import { useState, useRef, useEffect } from 'react';
-// import { useSearchParams } from "next/navigation";
-
-// interface Message {
-//   role: 'user' | 'assistant';
-//   content: string;
-// }
-
-// interface ChatClientProps {
-//   modelName: string;
-// }
-
-// export function ChatClient({ modelName }: ChatClientProps) {
-//   const searchParams = useSearchParams();
-//   const version = searchParams.get("version") || "default";
-//   const [messages, setMessages] = useState<Message[]>([]);
-//   const [input, setInput] = useState('');
-//   const [isLoading, setIsLoading] = useState(false);
-//   const messagesEndRef = useRef<HTMLDivElement>(null);
-
-//   const scrollToBottom = () => {
-//     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-//   };
-
-//   useEffect(() => {
-//     scrollToBottom();
-//   }, [messages]);
-
-//   const handleSubmit = async (e: React.FormEvent) => {
-//     e.preventDefault();
-//     if (!input.trim()) return;
-
-//     // Add user message
-//     const userMessage: Message = { role: 'user', content: input };
-//     setMessages(prev => [...prev, userMessage]);
-//     setInput('');
-//     setIsLoading(true);
-
-//     try {
-//       const response = await fetch('http://localhost:11434/api/generate', {
-//         method: 'POST',
-//         headers: {
-//           'Content-Type': 'application/json',
-//         },
-//         body: JSON.stringify({
-//           model: `${modelName.toLowerCase()}:${version}`,
-//           prompt: input,
-//           stream: true,
-//         }),
-//       });
-
-//       if (!response.body) throw new Error('No response body');
-
-//       const reader = response.body.getReader();
-//       const decoder = new TextDecoder();
-//       let assistantMessage = '';
-
-//       // Add initial assistant message
-//       setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
-
-//       while (true) {
-//         const { done, value } = await reader.read();
-//         if (done) break;
-
-//         const chunk = decoder.decode(value);
-//         const lines = chunk.split('\n');
-        
-//         for (const line of lines) {
-//           if (!line) continue;
-//           try {
-//             const parsed = JSON.parse(line);
-//             assistantMessage += parsed.response;
-            
-//             // Update the last message (assistant's message)
-//             setMessages(prev => [
-//               ...prev.slice(0, -1),
-//               { role: 'assistant', content: assistantMessage }
-//             ]);
-//           } catch (e) {
-//             console.error('Error parsing JSON:', e);
-//           }
-//         }
-//       }
-//     } catch (error) {
-//       console.error('Error:', error);
-//       setMessages(prev => [...prev, { 
-//         role: 'assistant', 
-//         content: 'Sorry, there was an error processing your request.' 
-//       }]);
-//     } finally {
-//       setIsLoading(false);
-//     }
-//   };
-
-//   return (
-//     <div className="min-h-screen bg-gray-50 p-8">
-//       <div className="max-w-4xl mx-auto">
-//         <h1 className="text-3xl font-bold mb-6">
-//           Chat with {modelName} ({version})
-//         </h1>
-        
-//         {/* Messages Container */}
-//         <div className="bg-white rounded-lg shadow-md p-6 mb-6 h-[600px] overflow-y-auto">
-//           {messages.map((message, index) => (
-//             <div
-//               key={index}
-//               className={`mb-4 ${
-//                 message.role === 'user' ? 'text-right' : 'text-left'
-//               }`}
-//             >
-//               <div
-//                 className={`inline-block p-4 rounded-lg ${
-//                   message.role === 'user'
-//                     ? 'bg-blue-500 text-white'
-//                     : 'bg-gray-100 text-gray-800'
-//                 }`}
-//               >
-//                 <p className="whitespace-pre-wrap">{message.content}</p>
-//               </div>
-//             </div>
-//           ))}
-//           <div ref={messagesEndRef} />
-//         </div>
-
-//         {/* Input Form */}
-//         <form onSubmit={handleSubmit} className="flex gap-4">
-//           <input
-//             type="text"
-//             value={input}
-//             onChange={(e) => setInput(e.target.value)}
-//             placeholder="Type your message..."
-//             className="flex-1 p-4 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-//             disabled={isLoading}
-//           />
-//           <button
-//             type="submit"
-//             disabled={isLoading}
-//             className="px-6 py-4 bg-blue-500 text-white rounded-lg hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-400"
-//           >
-//             {isLoading ? 'Sending...' : 'Send'}
-//           </button>
-//         </form>
-//       </div>
-//     </div>
-//   );
-// }
