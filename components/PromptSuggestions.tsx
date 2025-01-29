@@ -27,33 +27,23 @@ const PromptSuggestions: React.FC<PromptSuggestionsProps> = ({
       <span>Prompt Suggestions</span>
       <div className="flex items-center gap-2">
         {isSuggestionsLoading && <Loader2 className="w-4 h-4 animate-spin" />}
-        <ChevronDown
-          className={`w-4 h-4 transition-transform ${showSuggestions ? 'rotate-180' : ''}`}
-        />
+        {showSuggestions && (
+          <div className="suggestions-container">
+            {promptSuggestions.map((suggestion) => (
+              <div key={suggestion.id} className="suggestion-item">
+                <button
+                  onClick={() => handleSuggestionClick(suggestion)}
+                  className="w-full p-2 text-left text-sm rounded-lg transition-colors hover:bg-gray-100"
+                  disabled={isLoading}
+                  aria-disabled={isLoading}
+                >
+                  {suggestion.prompt}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
-
-      {/* Add Suggestions List */}
-      {showSuggestions && promptSuggestions.length > 0 && (
-        <div className="mt-1 space-y-1">
-          {promptSuggestions.map((suggestion) => (
-            <button
-              key={suggestion.id}
-              onClick={() => !isLoading && handleSuggestionClick(suggestion)}
-              className={`w-full p-2 text-left text-sm rounded-lg transition-colors ${
-                isLoading
-                  ? 'opacity-50 bg-gray-100 cursor-not-allowed'
-                  : 'hover:bg-gray-50 active:bg-gray-100'
-              }`}
-              disabled={isLoading}
-              aria-disabled={isLoading}
-            >
-              <span className={isLoading ? 'text-gray-400' : 'text-gray-700'}>
-                {suggestion.prompt}
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
     </>
   );
 };

@@ -95,6 +95,8 @@ export function ChatClient({ modelName }: { modelName: string }) {
     return saved ? JSON.parse(saved) : true;
   });
 
+  const [isCheckboxDisabled, setIsCheckboxDisabled] = useState(false);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -310,12 +312,14 @@ export function ChatClient({ modelName }: { modelName: string }) {
     setInput('');
     setIsLoading(true);
     setIsSuggestionsLoading(true);
+    setIsCheckboxDisabled(true);
   
     const cleanup = () => {
       setIsLoading(false);
       setIsSuggestionsLoading(false);
       setAbortController(null);
       setSuggestionsAbortController(null);
+      setIsCheckboxDisabled(false);
     };
   
     try {
@@ -502,6 +506,7 @@ export function ChatClient({ modelName }: { modelName: string }) {
                   checked={enableSuggestions}
                   onChange={(e) => setEnableSuggestions(e.target.checked)}
                   className="w-4 h-4 text-purple-600 rounded border-gray-300 focus:ring-purple-500"
+                  disabled={isCheckboxDisabled}
                 />
                 Suggestions
               </label>
