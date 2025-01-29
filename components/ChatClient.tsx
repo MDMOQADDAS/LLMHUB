@@ -424,18 +424,30 @@ export function ChatClient({ modelName }: { modelName: string }) {
           <div className="mb-2">
             {enableSuggestions && (
               <>
-                <button
+                <div 
                   onClick={() => setShowSuggestions(s => !s)}
-                  className="w-full p-2 flex items-center justify-between hover:bg-gray-100 rounded-lg transition-colors"
+                  className="w-full p-2 flex items-center justify-between hover:bg-gray-100 rounded-lg transition-colors cursor-pointer"
                 >
-                  <PromptSuggestions
-                    isSuggestionsLoading={isSuggestionsLoading}
-                    showSuggestions={showSuggestions}
-                    promptSuggestions={promptSuggestions}
-                    isLoading={isLoading}
-                    handleSuggestionClick={handleSuggestionClick}
-                  />
-                </button>
+                  <span className="flex items-center gap-2">
+                    <span>Prompt Suggestions</span>
+                    {isSuggestionsLoading && <Loader2 className="w-4 h-4 animate-spin" />}
+                  </span>
+                  <ChevronDown className={`w-4 h-4 transition-transform ${showSuggestions ? 'rotate-180' : ''}`} />
+                </div>
+
+                {showSuggestions && (
+                  <div className="mt-2 space-y-1">
+                    {promptSuggestions.map((suggestion) => (
+                      <div
+                        key={suggestion.id}
+                        onClick={() => handleSuggestionClick(suggestion)}
+                        className="w-full p-2 text-left text-sm rounded-lg transition-colors hover:bg-gray-100 cursor-pointer"
+                      >
+                        {suggestion.prompt}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </>
             )}
           </div>
