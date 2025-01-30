@@ -342,14 +342,14 @@ export function ChatClient({ modelName }: { modelName: string }) {
 
       const mainCall = makeAPICall(
         input,
-        isKidMode 
+        isKidMode
           ? `You are a friendly, educational AI assistant for children. Always provide:
              - Simple, easy to understand explanations
              - Safe, age-appropriate content
              - Positive, encouraging responses
              - Educational value where possible
              - No harmful, scary, or inappropriate content
-             ${settings.systemPrompt}` 
+             ${settings.systemPrompt}`
           : settings.systemPrompt,
         mainController.signal,
         (content) => addToQueue(content, assistantMessageId),
@@ -498,7 +498,7 @@ export function ChatClient({ modelName }: { modelName: string }) {
             )}
           </div>
 
-       
+
 
           <button
             onClick={exportChat}
@@ -526,8 +526,8 @@ export function ChatClient({ modelName }: { modelName: string }) {
                 >
                   {/* Message content with Markdown support */}
                   <div className={`rounded-2xl px-6 py-3 max-w-[85%] ${message.role === 'user'
-                      ? 'bg-purple-600 text-white'
-                      : 'bg-gray-50 text-gray-800'
+                    ? 'bg-purple-600 text-white'
+                    : 'bg-gray-50 text-gray-800'
                     }`}>
                     <ReactMarkdown
                       components={{
@@ -569,8 +569,11 @@ export function ChatClient({ modelName }: { modelName: string }) {
                   type="checkbox"
                   checked={enableSuggestions}
                   onChange={(e) => setEnableSuggestions(e.target.checked)}
-                  className="w-4 h-4 text-purple-600 rounded border-gray-300 focus:ring-purple-500"
-                  disabled={isCheckboxDisabled}
+                  // className="w-4 h-4 text-purple-600 rounded border-gray-300 focus:ring-purple-500"
+                  // disabled={isCheckboxDisabled}
+                  disabled={isLoading}
+                  className={`w-4 h-4 text-purple-600 rounded border-gray-300 focus:ring-purple-500 
+                    ${isLoading ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
                 />
                 Suggestions
               </label>
@@ -579,11 +582,11 @@ export function ChatClient({ modelName }: { modelName: string }) {
                   type="checkbox"
                   checked={isKidMode}
                   onChange={(e) => setIsKidMode(e.target.checked)}
-                  className="w-4 h-4 text-purple-600 rounded border-gray-300 focus:ring-purple-500"
+                  disabled={isLoading}
+                  className={`w-4 h-4 text-purple-600 rounded border-gray-300 focus:ring-purple-500 
+                    ${isLoading ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
                 />
-                Kid
-
-                
+                <span className={`${isLoading ? 'opacity-50' : ''}`}>Kid</span>
               </label>
             </div>
             <form onSubmit={handleSubmit} className="relative">
