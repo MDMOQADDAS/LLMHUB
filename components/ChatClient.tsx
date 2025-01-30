@@ -9,6 +9,8 @@ import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import PromptSuggestions from './PromptSuggestions';
+import Link from 'next/link';
+import KidModeToggle from './KidModeToggle';
 
 interface Message {
   id: string;
@@ -82,7 +84,7 @@ export function ChatClient({ modelName }: { modelName: string }) {
   });
   const [showSettings, setShowSettings] = useState(false);
   const [abortController, setAbortController] = useState<AbortController | null>(null);
-  
+
   // Add new states
   const [promptSuggestions, setPromptSuggestions] = useState<PromptSuggestion[]>([]);
   const [isSuggestionsLoading, setIsSuggestionsLoading] = useState(false);
@@ -99,6 +101,15 @@ export function ChatClient({ modelName }: { modelName: string }) {
 
   // Add new state for cache
   const [suggestionsCache] = useState<Map<string, PromptSuggestion[]>>(new Map());
+
+  // Add after other state declarations
+  const [isKidMode, setIsKidMode] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('isKidMode');
+      return saved ? JSON.parse(saved) : false;
+    }
+    return false;
+  });
 
   // Keyboard shortcuts
   useHotkeys('ctrl+enter', (keyboardEvent) => {
@@ -140,7 +151,7 @@ export function ChatClient({ modelName }: { modelName: string }) {
   // Stream handling with abort capability
   const handleStream = async (response: Response) => {
     if (!response.body) throw new Error('No response body');
-    
+
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let assistantMessage = '';
@@ -160,15 +171,15 @@ export function ChatClient({ modelName }: { modelName: string }) {
 
         const chunk = decoder.decode(value);
         const lines = chunk.split('\n');
-        
+
         for (const line of lines) {
           if (!line) continue;
           try {
             const parsed = JSON.parse(line);
             assistantMessage += parsed.response;
-            
-            setMessages(prev => prev.map(msg => 
-              msg.id === messageId 
+
+            setMessages(prev => prev.map(msg =>
+              msg.id === messageId
                 ? { ...msg, content: assistantMessage }
                 : msg
             ));
@@ -188,9 +199,9 @@ export function ChatClient({ modelName }: { modelName: string }) {
 
   // Add new helper function for API calls
   const makeAPICall = async (
-    prompt: string, 
-    systemPrompt: string, 
-    signal?: AbortSignal, 
+    prompt: string,
+    systemPrompt: string,
+    signal?: AbortSignal,
     streamCallback?: (content: string) => void,
     options: APICallOptions = {}
   ) => {
@@ -199,7 +210,7 @@ export function ChatClient({ modelName }: { modelName: string }) {
       maxTokens = settings.maxTokens,
       retry = 2
     } = options;
-  
+
     const makeRequest = async (attempt: number = 0): Promise<string> => {
       try {
         const response = await fetch('http://localhost:11434/api/generate', {
@@ -215,20 +226,20 @@ export function ChatClient({ modelName }: { modelName: string }) {
           }),
           signal,
         });
-  
+
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        
+
         let result = '';
         const reader = response.body?.getReader();
         const decoder = new TextDecoder();
-  
+
         while (true) {
           const { done, value } = await reader!.read();
           if (done) break;
-          
+
           const chunk = decoder.decode(value);
           const lines = chunk.split('\n');
-          
+
           for (const line of lines) {
             if (!line) continue;
             try {
@@ -240,7 +251,7 @@ export function ChatClient({ modelName }: { modelName: string }) {
             }
           }
         }
-  
+
         return result;
       } catch (error) {
         if (attempt < retry && (error as Error).name !== 'AbortError') {
@@ -250,7 +261,7 @@ export function ChatClient({ modelName }: { modelName: string }) {
         throw error;
       }
     };
-  
+
     return makeRequest();
   };
 
@@ -288,32 +299,32 @@ export function ChatClient({ modelName }: { modelName: string }) {
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
     if (!input.trim() || isLoading) return;
-  
+
     const userMessage: Message = {
       id: crypto.randomUUID(),
       role: 'user',
       content: input,
       timestamp: Date.now()
     };
-  
+
     const assistantMessageId = crypto.randomUUID();
-  
+
     // Initialize messages
-    setMessages(prev => [...prev, 
+    setMessages(prev => [...prev,
       userMessage,
-      {
-        id: assistantMessageId,
-        role: 'assistant',
-        content: '',
-        timestamp: Date.now()
-      }
+    {
+      id: assistantMessageId,
+      role: 'assistant',
+      content: '',
+      timestamp: Date.now()
+    }
     ]);
-    
+
     setInput('');
     setIsLoading(true);
     setIsSuggestionsLoading(true);
     setIsCheckboxDisabled(true);
-  
+
     const cleanup = () => {
       setIsLoading(false);
       setIsSuggestionsLoading(false);
@@ -321,21 +332,22 @@ export function ChatClient({ modelName }: { modelName: string }) {
       setSuggestionsAbortController(null);
       setIsCheckboxDisabled(false);
     };
-  
+
     try {
       const mainController = new AbortController();
       const suggestionsController = new AbortController();
-      
+
       setAbortController(mainController);
       setSuggestionsAbortController(suggestionsController);
-  
+
       const mainCall = makeAPICall(
         input,
         settings.systemPrompt,
         mainController.signal,
-        (content) => addToQueue(content, assistantMessageId)
+        (content) => addToQueue(content, assistantMessageId),
+        { retry: 2 }
       );
-  
+
       // Modified suggestion generation
       if (enableSuggestions) {
         // Check cache first
@@ -351,8 +363,8 @@ export function ChatClient({ modelName }: { modelName: string }) {
               "Generate brief variations.", // Simpler prompt
               suggestionsController.signal,
               undefined,
-              { 
-                temperature: 0.3, 
+              {
+                temperature: 0.3,
                 maxTokens: 256  // Reduced tokens
               }
             ).then(result => {
@@ -364,7 +376,7 @@ export function ChatClient({ modelName }: { modelName: string }) {
                   id: crypto.randomUUID(),
                   prompt: line.replace(/^\d+\.\s*/, '').trim()
                 }));
-              
+
               // Cache the results
               suggestionsCache.set(cacheKey, suggestions);
               setPromptSuggestions(suggestions);
@@ -416,18 +428,27 @@ export function ChatClient({ modelName }: { modelName: string }) {
     }
   }, []); // Empty dependency array means this runs once on mount
 
+  // Add after other useEffects
+  useEffect(() => {
+    localStorage.setItem('isKidMode', JSON.stringify(isKidMode));
+  }, [isKidMode]);
+
   // UI Components
   return (
     <div className="flex h-screen bg-gray-50">
       {/* Left Sidebar */}
       <div className="w-64 bg-white border-r border-gray-200 flex flex-col">
         <div className="p-4 border-b">
-          <h1 className="text-xl font-semibold text-gray-800">LLMHUB</h1>
+          <div>
+            <Link href="/" className="text-xl font-semibold text-gray-800 hover:text-gray-600 transition-colors">
+              LLMHUB
+            </Link>
+          </div>
           <div className="mt-2 px-3 py-1 rounded-full bg-purple-100 text-purple-700 text-sm inline-block">
             {modelName} ({version})
           </div>
         </div>
-        
+
         {/* Modified Sidebar with Suggestions Display */}
         <div className="flex-1 p-4">
           <button
@@ -436,12 +457,12 @@ export function ChatClient({ modelName }: { modelName: string }) {
           >
             Settings
           </button>
-          
+
           {/* Prompt Suggestions Dropdown */}
           <div className="mb-2">
             {enableSuggestions && (
               <>
-                <div 
+                <div
                   onClick={() => setShowSuggestions(s => !s)}
                   className="w-full p-2 flex items-center justify-between hover:bg-gray-100 rounded-lg transition-colors cursor-pointer"
                 >
@@ -468,7 +489,9 @@ export function ChatClient({ modelName }: { modelName: string }) {
               </>
             )}
           </div>
-          
+
+       
+
           <button
             onClick={exportChat}
             className="w-full p-2 flex items-center gap-2 hover:bg-gray-100 rounded-lg transition-colors"
@@ -490,16 +513,14 @@ export function ChatClient({ modelName }: { modelName: string }) {
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -20 }}
-                  className={`flex items-start space-x-4 ${
-                    message.role === 'user' ? 'justify-end' : 'justify-start'
-                  }`}
+                  className={`flex items-start space-x-4 ${message.role === 'user' ? 'justify-end' : 'justify-start'
+                    }`}
                 >
                   {/* Message content with Markdown support */}
-                  <div className={`rounded-2xl px-6 py-3 max-w-[85%] ${
-                    message.role === 'user'
+                  <div className={`rounded-2xl px-6 py-3 max-w-[85%] ${message.role === 'user'
                       ? 'bg-purple-600 text-white'
                       : 'bg-gray-50 text-gray-800'
-                  }`}>
+                    }`}>
                     <ReactMarkdown
                       components={{
                         code({ inline, className, children, ...props }: { inline?: boolean, className?: string, children?: React.ReactNode }) {
@@ -544,6 +565,15 @@ export function ChatClient({ modelName }: { modelName: string }) {
                   disabled={isCheckboxDisabled}
                 />
                 Suggestions
+              </label>
+              <label className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={isKidMode}
+                  onChange={(e) => setIsKidMode(e.target.checked)}
+                  className="w-4 h-4 text-purple-600 rounded border-gray-300 focus:ring-purple-500"
+                />
+                Kid Mode
               </label>
             </div>
             <form onSubmit={handleSubmit} className="relative">
