@@ -97,6 +97,9 @@ export function ChatClient({ modelName }: { modelName: string }) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  // Add new state for cache
+  const [suggestionsCache] = useState<Map<string, PromptSuggestion[]>>(new Map());
+
   // Keyboard shortcuts
   useHotkeys('ctrl+enter', (keyboardEvent) => {
     keyboardEvent.preventDefault();
@@ -333,28 +336,42 @@ export function ChatClient({ modelName }: { modelName: string }) {
         (content) => addToQueue(content, assistantMessageId)
       );
   
+      // Modified suggestion generation
       if (enableSuggestions) {
-        await Promise.all([
-          mainCall,
-          makeAPICall(
-            `Improve this prompt (5 brief alternatives):\n${input}`,
-            "You are a prompt optimizer. Be concise.",
-            suggestionsController.signal,
-            undefined,
-            { temperature: 0.3, maxTokens: 1024 }
-          ).then(result => {
-            const suggestions = result
-              .split('\n')
-              .filter(line => /^\d+\./.test(line))
-              .slice(0, 5)
-              .map(line => ({
-                id: crypto.randomUUID(),
-                prompt: line.replace(/^\d+\.\s*/, '').trim()
-              }));
-            setPromptSuggestions(suggestions);
-            setShowSuggestions(true);
-          })
-        ]);
+        // Check cache first
+        const cacheKey = input.toLowerCase().trim();
+        if (suggestionsCache.has(cacheKey)) {
+          setPromptSuggestions(suggestionsCache.get(cacheKey)!);
+          setShowSuggestions(true);
+        } else {
+          await Promise.all([
+            mainCall,
+            makeAPICall(
+              `Quick alternatives (3 brief options):\n${input}`, // Reduced to 3 suggestions
+              "Generate brief variations.", // Simpler prompt
+              suggestionsController.signal,
+              undefined,
+              { 
+                temperature: 0.3, 
+                maxTokens: 256  // Reduced tokens
+              }
+            ).then(result => {
+              const suggestions = result
+                .split('\n')
+                .filter(line => /^\d+\./.test(line))
+                .slice(0, 3)
+                .map(line => ({
+                  id: crypto.randomUUID(),
+                  prompt: line.replace(/^\d+\.\s*/, '').trim()
+                }));
+              
+              // Cache the results
+              suggestionsCache.set(cacheKey, suggestions);
+              setPromptSuggestions(suggestions);
+              setShowSuggestions(true);
+            })
+          ]);
+        }
       } else {
         await mainCall;
       }

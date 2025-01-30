@@ -20,6 +20,12 @@ const MODELS: LLMModel[] = [
     defaultVersion: "7b"
   },
   {
+    name: "qwen2.5",
+    versions: ["7b", "13b", "70b"],
+    description: "General purpose AI model for various tasks",
+    defaultVersion: "7b"
+  },
+  {
     name: "Llama-3",
     versions: ["8b", "70b"],
     description: "Meta's latest open-source LLM",
