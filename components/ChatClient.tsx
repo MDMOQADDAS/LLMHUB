@@ -342,7 +342,15 @@ export function ChatClient({ modelName }: { modelName: string }) {
 
       const mainCall = makeAPICall(
         input,
-        settings.systemPrompt,
+        isKidMode 
+          ? `You are a friendly, educational AI assistant for children. Always provide:
+             - Simple, easy to understand explanations
+             - Safe, age-appropriate content
+             - Positive, encouraging responses
+             - Educational value where possible
+             - No harmful, scary, or inappropriate content
+             ${settings.systemPrompt}` 
+          : settings.systemPrompt,
         mainController.signal,
         (content) => addToQueue(content, assistantMessageId),
         { retry: 2 }
@@ -573,7 +581,9 @@ export function ChatClient({ modelName }: { modelName: string }) {
                   onChange={(e) => setIsKidMode(e.target.checked)}
                   className="w-4 h-4 text-purple-600 rounded border-gray-300 focus:ring-purple-500"
                 />
-                Kid Mode
+                Kid
+
+                
               </label>
             </div>
             <form onSubmit={handleSubmit} className="relative">
