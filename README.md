@@ -1,8 +1,29 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# LLMHUB
+
+LLMHUB is a Next.js project that allows users to interact with various open-source large language models (LLMs) such as DeepSeek-R1, QWEM2.5, and Llama3. This project provides a user-friendly interface to explore and utilize these models for various applications.
 
 ## Getting Started
 
-First, run the development server:
+First, clone the repository and navigate to the project directory:
+
+```bash
+git clone https://github.com/yourusername/llmhub.git
+cd llmhub
+```
+
+Install the dependencies:
+
+```bash
+npm install
+# or
+yarn install
+# or
+pnpm install
+# or
+bun install
+```
+
+Run the development server:
 
 ```bash
 npm run dev
@@ -18,19 +39,46 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Features
 
-## Learn More
+- **Suggestions Mode**: Provides prompt suggestions to help users generate better inputs.
+- **Kid Mode**: Offers child-friendly responses with simple and safe content.
+- **Expert Mode**: Delivers detailed and advanced explanations for professional use.
+- **InShort Mode**: Generates concise and to-the-point responses.
 
-To learn more about Next.js, take a look at the following resources:
+## Usage
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### Enabling Modes
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+You can enable different modes by checking the corresponding checkboxes in the UI:
 
-## Deploy on Vercel
+- **Suggestions**: Enable prompt suggestions.
+- **Kid Mode**: Enable child-friendly responses.
+- **Expert Mode**: Enable expert-level responses.
+- **InShort Mode**: Enable concise responses.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### Exporting Chat History
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+You can export the chat history by clicking the "Export Chat" button in the sidebar. The chat history will be downloaded as a JSON file.
+
+## Keyboard Shortcuts
+
+- **Ctrl + Enter**: Submit the input.
+- **Esc**: Close the settings.
+
+## API Integration
+
+The project integrates with various LLM APIs to provide responses. You can configure the API endpoints and settings in the project.
+
+## Contributing
+
+Contributions are welcome! Please open an issue or submit a pull request for any improvements or bug fixes.
+
+## License
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for more details.
+
+
+## Contact
+
+For any inquiries or support, please contact [mdmoqaddas@gmail.com](mailto:mdmoqaddas@gmail.com).
