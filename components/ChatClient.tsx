@@ -111,6 +111,12 @@ export function ChatClient({ modelName }: { modelName: string }) {
     return false;
   });
 
+  // Add new state for Expert Mode
+  const [isExpertMode, setIsExpertMode] = useState(false);
+
+  // Add new state for InShort Mode
+  const [isInShortMode, setIsInShortMode] = useState(false);
+
   // Keyboard shortcuts
   useHotkeys('ctrl+enter', (keyboardEvent) => {
     keyboardEvent.preventDefault();
@@ -350,6 +356,19 @@ export function ChatClient({ modelName }: { modelName: string }) {
              - Educational value where possible
              - No harmful, scary, or inappropriate content
              ${settings.systemPrompt}`
+          : isExpertMode
+          ? `You are an expert AI assistant. Always provide:
+             - Detailed, in-depth explanations
+             - Advanced, technical content
+             - Professional, precise responses
+             - High-level insights and analysis
+             ${settings.systemPrompt}`
+          : isInShortMode
+          ? `You are a concise AI assistant. Always provide:
+             - Very brief, to-the-point responses
+             - Minimal words, maximum information
+             - Short, clear, and precise answers
+             ${settings.systemPrompt}`
           : settings.systemPrompt,
         mainController.signal,
         (content) => addToQueue(content, assistantMessageId),
@@ -587,6 +606,28 @@ export function ChatClient({ modelName }: { modelName: string }) {
                     ${isLoading ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
                 />
                 <span className={`${isLoading ? 'opacity-50' : ''}`}>Kid</span>
+              </label>
+              <label className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={isExpertMode}
+                  onChange={(e) => setIsExpertMode(e.target.checked)}
+                  disabled={isLoading}
+                  className={`w-4 h-4 text-purple-600 rounded border-gray-300 focus:ring-purple-500 
+                    ${isLoading ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
+                />
+                <span className={`${isLoading ? 'opacity-50' : ''}`}>Expert</span>
+              </label>
+              <label className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={isInShortMode}
+                  onChange={(e) => setIsInShortMode(e.target.checked)}
+                  disabled={isLoading}
+                  className={`w-4 h-4 text-purple-600 rounded border-gray-300 focus:ring-purple-500 
+                    ${isLoading ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
+                />
+                <span className={`${isLoading ? 'opacity-50' : ''}`}>InShort</span>
               </label>
             </div>
             <form onSubmit={handleSubmit} className="relative">
