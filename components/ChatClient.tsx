@@ -102,14 +102,8 @@ export function ChatClient({ modelName }: { modelName: string }) {
   // Add new state for cache
   const [suggestionsCache] = useState<Map<string, PromptSuggestion[]>>(new Map());
 
-  // Add after other state declarations
-  const [isKidMode, setIsKidMode] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('isKidMode');
-      return saved ? JSON.parse(saved) : false;
-    }
-    return false;
-  });
+  // Replace the three mode states with a single mode state
+  const [activeMode, setActiveMode] = useState<'kid' | 'expert' | 'inshort' | null>(null);
 
   // Add new state for Expert Mode
   const [isExpertMode, setIsExpertMode] = useState(false);
@@ -346,30 +340,32 @@ export function ChatClient({ modelName }: { modelName: string }) {
       setAbortController(mainController);
       setSuggestionsAbortController(suggestionsController);
 
-      const mainCall = makeAPICall(
-        input,
-        isKidMode
-          ? `You are a friendly, educational AI assistant for children. Always provide:
+      const systemPrompt = activeMode === 'kid'
+        ? `You are a friendly, educational AI assistant for children. Always provide:
              - Simple, easy to understand explanations
              - Safe, age-appropriate content
              - Positive, encouraging responses
              - Educational value where possible
              - No harmful, scary, or inappropriate content
              ${settings.systemPrompt}`
-          : isExpertMode
+        : activeMode === 'expert'
           ? `You are an expert AI assistant. Always provide:
              - Detailed, in-depth explanations
              - Advanced, technical content
              - Professional, precise responses
              - High-level insights and analysis
              ${settings.systemPrompt}`
-          : isInShortMode
-          ? `You are a concise AI assistant. Always provide:
+          : activeMode === 'inshort'
+            ? `You are a concise AI assistant. Always provide:
              - Very brief, to-the-point responses
              - Minimal words, maximum information
              - Short, clear, and precise answers
              ${settings.systemPrompt}`
-          : settings.systemPrompt,
+            : settings.systemPrompt;
+
+      const mainCall = makeAPICall(
+        input,
+        systemPrompt,
         mainController.signal,
         (content) => addToQueue(content, assistantMessageId),
         { retry: 2 }
@@ -457,8 +453,13 @@ export function ChatClient({ modelName }: { modelName: string }) {
 
   // Add after other useEffects
   useEffect(() => {
-    localStorage.setItem('isKidMode', JSON.stringify(isKidMode));
-  }, [isKidMode]);
+    localStorage.setItem('isKidMode', JSON.stringify(activeMode === 'kid'));
+  }, [activeMode]);
+
+  // Add handler for mode changes
+  const handleModeChange = (mode: 'kid' | 'expert' | 'inshort') => {
+    setActiveMode(currentMode => currentMode === mode ? null : mode);
+  };
 
   // UI Components
   return (
@@ -600,33 +601,33 @@ export function ChatClient({ modelName }: { modelName: string }) {
               <label className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 cursor-pointer">
                 <input
                   type="checkbox"
-                  checked={isKidMode}
-                  onChange={(e) => setIsKidMode(e.target.checked)}
-                  disabled={isLoading}
+                  checked={activeMode === 'kid'}
+                  onChange={() => handleModeChange('kid')}
+                  disabled={isLoading || (activeMode !== null && activeMode !== 'kid')}
                   className={`w-4 h-4 text-purple-600 rounded border-gray-300 focus:ring-purple-500 
-                    ${isLoading ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
+                    ${isLoading || (activeMode !== null && activeMode !== 'kid') ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
                 />
                 <span className={`${isLoading ? 'opacity-50' : ''}`}>Kid</span>
               </label>
               <label className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 cursor-pointer">
                 <input
                   type="checkbox"
-                  checked={isExpertMode}
-                  onChange={(e) => setIsExpertMode(e.target.checked)}
-                  disabled={isLoading}
+                  checked={activeMode === 'expert'}
+                  onChange={() => handleModeChange('expert')}
+                  disabled={isLoading || (activeMode !== null && activeMode !== 'expert')}
                   className={`w-4 h-4 text-purple-600 rounded border-gray-300 focus:ring-purple-500 
-                    ${isLoading ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
+                    ${isLoading || (activeMode !== null && activeMode !== 'expert') ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
                 />
                 <span className={`${isLoading ? 'opacity-50' : ''}`}>Expert</span>
               </label>
               <label className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 cursor-pointer">
                 <input
                   type="checkbox"
-                  checked={isInShortMode}
-                  onChange={(e) => setIsInShortMode(e.target.checked)}
-                  disabled={isLoading}
+                  checked={activeMode === 'inshort'}
+                  onChange={() => handleModeChange('inshort')}
+                  disabled={isLoading || (activeMode !== null && activeMode !== 'inshort')}
                   className={`w-4 h-4 text-purple-600 rounded border-gray-300 focus:ring-purple-500 
-                    ${isLoading ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
+                    ${isLoading || (activeMode !== null && activeMode !== 'inshort') ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
                 />
                 <span className={`${isLoading ? 'opacity-50' : ''}`}>InShort</span>
               </label>
