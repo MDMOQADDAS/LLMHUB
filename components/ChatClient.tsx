@@ -1,7 +1,7 @@
 "use client";
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useSearchParams } from "next/navigation";
-import { Send, Loader2, Bot, User, Copy, Check, StopCircle, RotateCcw, Share2, Download, ChevronDown } from 'lucide-react';
+import { Send, Loader2, Bot, User, Copy, Check, StopCircle, RotateCcw, Share2, Download, ChevronDown, Settings } from 'lucide-react';
 import { toast } from 'sonner';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -480,8 +480,9 @@ export function ChatClient({ modelName }: { modelName: string }) {
         <div className="flex-1 p-4">
           <button
             onClick={() => setShowSettings(s => !s)}
-            className="w-full p-2 mb-2 text-left hover:bg-gray-100 rounded-lg transition-colors"
+            className="w-full p-2 mb-2 text-left hover:bg-gray-100 rounded-lg transition-colors flex items-center gap-2"
           >
+            <Settings className="w-5 h-5" />
             Settings
           </button>
 
@@ -631,6 +632,9 @@ export function ChatClient({ modelName }: { modelName: string }) {
               </label>
             </div>
             <form onSubmit={handleSubmit} className="relative">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="ml-auto text-sm text-gray-500">{input.length} / 2048</span>
+              </div>
               <textarea
                 ref={textareaRef}
                 value={input}
@@ -679,7 +683,11 @@ export function ChatClient({ modelName }: { modelName: string }) {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
           >
-            {/* Settings content */}
+            <div className="bg-white rounded-lg p-6 w-96">
+              <h2 className="text-xl font-semibold mb-4">Settings</h2>
+              {/* Add settings content here */}
+              <button onClick={() => setShowSettings(false)} className="mt-4 w-full p-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">Close</button>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
