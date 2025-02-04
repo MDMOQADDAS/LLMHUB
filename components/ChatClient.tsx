@@ -12,11 +12,13 @@ import PromptSuggestions from './PromptSuggestions';
 import Link from 'next/link';
 import KidModeToggle from './KidModeToggle';
 
+// Update Message interface
 interface Message {
   id: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp: number;
+  mode?: 'kid' | 'expert' | 'inshort' | null; // Add this line
 }
 
 interface ChatSettings {
@@ -295,6 +297,20 @@ export function ChatClient({ modelName }: { modelName: string }) {
     }
   }, [processQueue]);
 
+  // Add helper function for badge styles
+  const getBadgeStyles = (mode: 'kid' | 'expert' | 'inshort' | null) => {
+    switch (mode) {
+      case 'kid':
+        return 'bg-blue-100 text-blue-800 border-blue-200';
+      case 'expert':
+        return 'bg-purple-100 text-purple-800 border-purple-200';
+      case 'inshort':
+        return 'bg-green-100 text-green-800 border-green-200';
+      default:
+        return '';
+    }
+  };
+
   // Modified handleSubmit
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -304,7 +320,8 @@ export function ChatClient({ modelName }: { modelName: string }) {
       id: crypto.randomUUID(),
       role: 'user',
       content: input,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      mode: activeMode // Add this line
     };
 
     const assistantMessageId = crypto.randomUUID();
@@ -316,7 +333,8 @@ export function ChatClient({ modelName }: { modelName: string }) {
       id: assistantMessageId,
       role: 'assistant',
       content: '',
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      mode: activeMode // Add this line
     }
     ]);
 
@@ -461,6 +479,7 @@ export function ChatClient({ modelName }: { modelName: string }) {
     setActiveMode(currentMode => currentMode === mode ? null : mode);
   };
 
+
   // UI Components
   return (
     <div className="flex h-screen bg-gray-50">
@@ -535,6 +554,13 @@ export function ChatClient({ modelName }: { modelName: string }) {
       <div className="flex-1 flex flex-col">
         <div className="flex-1 overflow-y-auto px-4">
           <div className="max-w-4xl mx-auto py-6 space-y-6">
+            {activeMode && (
+              <div className={`inline-flex items-center px-3 py-1 rounded-full border ${getBadgeStyles(activeMode)} text-sm font-medium`}>
+                {activeMode === 'kid' && 'Kid-Friendly Mode'}
+                {activeMode === 'expert' && 'Expert Mode'}
+                {activeMode === 'inshort' && 'Concise Mode'}
+              </div>
+            )}
             <AnimatePresence>
               {messages.map((message) => (
                 <motion.div
@@ -542,37 +568,24 @@ export function ChatClient({ modelName }: { modelName: string }) {
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -20 }}
-                  className={`flex items-start space-x-4 ${message.role === 'user' ? 'justify-end' : 'justify-start'
-                    }`}
+                  className={`flex flex-col ${message.role === 'user' ? 'items-end' : 'items-start'}`}
                 >
-                  {/* Message content with Markdown support */}
-                  <div className={`rounded-2xl px-6 py-3 max-w-[85%] ${message.role === 'user'
-                    ? 'bg-purple-600 text-white'
-                    : 'bg-gray-50 text-gray-800'
+                  {message.mode && (
+                    <div className={`mb-1 px-2 py-0.5 text-xs rounded-full border ${getBadgeStyles(message.mode)}`}>
+                      {message.mode === 'kid' && 'Kid-Friendly'}
+                      {message.mode === 'expert' && 'Expert'}
+                      {message.mode === 'inshort' && 'Concise'}
+                    </div>
+                  )}
+                  <div className={`flex items-start space-x-4 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                    {/* Existing message content */}
+                    <div className={`rounded-2xl px-6 py-3 max-w-[85%] ${
+                      message.role === 'user' ? 'bg-purple-600 text-white' : 'bg-gray-50 text-gray-800'
                     }`}>
-                    <ReactMarkdown
-                      components={{
-                        code({ inline, className, children, ...props }: { inline?: boolean, className?: string, children?: React.ReactNode }) {
-                          const match = /language-(\w+)/.exec(className || '');
-                          return !inline && match ? (
-                            <SyntaxHighlighter
-                              language={match[1]}
-                              style={atomDark as any}
-                              PreTag="div"
-                              {...(props as any)}
-                            >
-                              {String(children).replace(/\n$/, '')}
-                            </SyntaxHighlighter>
-                          ) : (
-                            <code className={className} {...props}>
-                              {children}
-                            </code>
-                          );
-                        }
-                      }}
-                    >
-                      {message.content}
-                    </ReactMarkdown>
+                      <ReactMarkdown>
+                        {message.content}
+                      </ReactMarkdown>
+                    </div>
                   </div>
                 </motion.div>
               ))}
