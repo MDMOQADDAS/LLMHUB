@@ -1,5 +1,5 @@
 "use client";
-import { useState, useRef, useEffect, useCallback, memo } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useSearchParams } from "next/navigation";
 import Link from 'next/link';
 import { Send, Loader2, Settings, StopCircle, ChevronDown, Download } from 'lucide-react';
@@ -7,186 +7,21 @@ import { toast } from 'sonner';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 
+// Imported components and utilities
+import { ModeBadge, getBadgeStylesUtil } from './chat/components/ModeBadge';
+import { MarkdownComponents } from './chat/components/MarkdownComponents';
+import { safeLocalStorage, STORAGE_KEYS } from './chat/components/StorageHelpers';
+import { makeAPICall } from './chat/utils/apiCall';
+import { useMessageQueue } from './chat/utils/messageQueue';
 
-// Add constants at top of file
-const STORAGE_KEYS = {
-  SUGGESTIONS: 'enableSuggestions',
-  ACTIVE_MODE: 'activeMode'
-} as const;
+// Imported interfaces
+import { Message, ModeType } from './chat/interfaces/Message';
+import { ChatSettings, PromptSuggestion } from './chat/interfaces/ChatSettings';
+import { APICallOptions } from './chat/interfaces/ApiTypes';
 
-type ModeType = 'kid' | 'expert' | 'inshort' | null;
-
-interface StorageHelpers {
-  get: (key: string) => any;
-  set: (key: string, value: any) => void;
-}
-
-const MarkdownComponents = {
-  code({ node, inline, className, children, ...props }: any) {
-    const match = /language-(\w+)/.exec(className || '');
-    return !inline && match ? (
-      <SyntaxHighlighter
-        style={oneLight}
-        language={match[1]}
-        PreTag="div"
-        {...props}
-        className="rounded-lg text-sm"
-      >
-        {String(children).replace(/\n$/, '')}
-      </SyntaxHighlighter>
-    ) : (
-      <code
-        className={`bg-gray-100 rounded px-1 py-0.5 text-sm font-mono ${className}`}
-        {...props}
-      >
-        {children}
-      </code>
-    );
-  },
-  h1: ({ children }: any) => <h1 className="text-2xl font-bold mb-2">{children}</h1>,
-  h2: ({ children }: any) => <h2 className="text-xl font-semibold mb-2">{children}</h2>,
-  h3: ({ children }: any) => <h3 className="text-lg font-medium mb-1">{children}</h3>,
-  ul: ({ children }: any) => <ul className="list-disc pl-5 mb-2">{children}</ul>,
-  ol: ({ children }: any) => <ol className="list-decimal pl-5 mb-2">{children}</ol>,
-  blockquote: ({ children }: any) => (
-    <blockquote className="border-l-4 border-gray-300 pl-4 italic text-gray-600 my-2">
-      {children}
-    </blockquote>
-  ),
-};
-
-
-// Add utility function
-const safeLocalStorage: StorageHelpers = {
-  get: (key: string) => {
-    if (typeof window === 'undefined') return null;
-    try {
-      const item = localStorage.getItem(key);
-      return item ? JSON.parse(item) : null;
-    } catch (e) {
-      console.error(`Error reading ${key} from localStorage:`, e);
-      return null;
-    }
-  },
-  set: (key: string, value: any) => {
-    if (typeof window === 'undefined') return;
-    try {
-      localStorage.setItem(key, JSON.stringify(value));
-    } catch (e) {
-      console.error(`Error writing ${key} to localStorage:`, e);
-    }
-  }
-};
-
-// Update Message interface
-interface Message {
-  id: string;
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-  timestamp: number;
-  mode?: 'kid' | 'expert' | 'inshort' | null; // Add this line
-}
-
-interface ChatSettings {
-  temperature: number;
-  maxTokens: number;
-  systemPrompt: string;
-}
-
-// Add new interfaces
-interface PromptSuggestion {
-  id: string;
-  prompt: string;
-}
-
-// Add new interfaces
-interface APICallOptions {
-  temperature?: number;
-  maxTokens?: number;
-  retry?: number;
-}
-
-// Add at top with other interfaces
-interface BadgeProps {
-  mode: ModeType;
-  className?: string;
-}
-
-// Add message queue utility
-const useMessageQueue = (assistantMessageId: string, delay = 50) => {
-  const queue = useRef<string[]>([]);
-  const [processing, setProcessing] = useState(false);
-
-  const processQueue = useCallback(() => {
-    if (queue.current.length === 0) {
-      setProcessing(false);
-      return;
-    }
-    // Process next message
-    const next = queue.current.shift();
-    if (next) {
-      postMessage((prev: any[]) => prev.map(msg =>
-        msg.id === assistantMessageId
-          ? { ...msg, content: next }
-          : msg
-      ));
-    }
-    setTimeout(processQueue, delay);
-  }, []);
-
-  const addToQueue = (message: string) => {
-    queue.current.push(message);
-    if (!processing) {
-      setProcessing(true);
-      processQueue();
-    }
-  };
-
-  return addToQueue;
-};
-
-// Add regular utility function outside component
-const getBadgeStylesUtil = (mode: ModeType): string => {
-  switch (mode) {
-    case 'kid':
-      return 'bg-blue-100 text-blue-800 border-blue-200';
-    case 'expert':
-      return 'bg-purple-100 text-purple-800 border-purple-200';
-    case 'inshort':
-      return 'bg-green-100 text-green-800 border-green-200';
-    default:
-      return '';
-  }
-};
-
-// Add Memoized Badge Component
-const ModeBadge = memo(({ mode, className = '' }: BadgeProps) => {
-  if (!mode) return null;
-
-  const label = {
-    'kid': 'Kid-Friendly',
-    'expert': 'Expert',
-    'inshort': 'Concise'
-  }[mode];
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.9 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.9 }}
-      className={`mb-1 px-2 py-0.5 text-xs rounded-full border ${getBadgeStylesUtil(mode)} ${className}`}
-    >
-      {label}
-    </motion.div>
-  );
-});
-
-ModeBadge.displayName = 'ModeBadge';
 
 export function ChatClient({ modelName }: { modelName: string }) {
   const searchParams = useSearchParams();
