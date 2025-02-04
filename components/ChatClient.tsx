@@ -1,16 +1,87 @@
 "use client";
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, memo } from 'react';
 import { useSearchParams } from "next/navigation";
-import { Send, Loader2, Bot, User, Copy, Check, StopCircle, RotateCcw, Share2, Download, ChevronDown, Settings } from 'lucide-react';
+import Link from 'next/link';
+import { Send, Loader2, Settings, StopCircle, ChevronDown, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import PromptSuggestions from './PromptSuggestions';
-import Link from 'next/link';
-import KidModeToggle from './KidModeToggle';
+import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import remarkGfm from 'remark-gfm';
+import rehypeRaw from 'rehype-raw';
+
+
+// Add constants at top of file
+const STORAGE_KEYS = {
+  SUGGESTIONS: 'enableSuggestions',
+  ACTIVE_MODE: 'activeMode'
+} as const;
+
+type ModeType = 'kid' | 'expert' | 'inshort' | null;
+
+interface StorageHelpers {
+  get: (key: string) => any;
+  set: (key: string, value: any) => void;
+}
+
+const MarkdownComponents = {
+  code({ node, inline, className, children, ...props }: any) {
+    const match = /language-(\w+)/.exec(className || '');
+    return !inline && match ? (
+      <SyntaxHighlighter
+        style={oneLight}
+        language={match[1]}
+        PreTag="div"
+        {...props}
+        className="rounded-lg text-sm"
+      >
+        {String(children).replace(/\n$/, '')}
+      </SyntaxHighlighter>
+    ) : (
+      <code
+        className={`bg-gray-100 rounded px-1 py-0.5 text-sm font-mono ${className}`}
+        {...props}
+      >
+        {children}
+      </code>
+    );
+  },
+  h1: ({ children }: any) => <h1 className="text-2xl font-bold mb-2">{children}</h1>,
+  h2: ({ children }: any) => <h2 className="text-xl font-semibold mb-2">{children}</h2>,
+  h3: ({ children }: any) => <h3 className="text-lg font-medium mb-1">{children}</h3>,
+  ul: ({ children }: any) => <ul className="list-disc pl-5 mb-2">{children}</ul>,
+  ol: ({ children }: any) => <ol className="list-decimal pl-5 mb-2">{children}</ol>,
+  blockquote: ({ children }: any) => (
+    <blockquote className="border-l-4 border-gray-300 pl-4 italic text-gray-600 my-2">
+      {children}
+    </blockquote>
+  ),
+};
+
+
+// Add utility function
+const safeLocalStorage: StorageHelpers = {
+  get: (key: string) => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const item = localStorage.getItem(key);
+      return item ? JSON.parse(item) : null;
+    } catch (e) {
+      console.error(`Error reading ${key} from localStorage:`, e);
+      return null;
+    }
+  },
+  set: (key: string, value: any) => {
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+    } catch (e) {
+      console.error(`Error writing ${key} to localStorage:`, e);
+    }
+  }
+};
 
 // Update Message interface
 interface Message {
@@ -38,6 +109,12 @@ interface APICallOptions {
   temperature?: number;
   maxTokens?: number;
   retry?: number;
+}
+
+// Add at top with other interfaces
+interface BadgeProps {
+  mode: ModeType;
+  className?: string;
 }
 
 // Add message queue utility
@@ -72,6 +149,44 @@ const useMessageQueue = (assistantMessageId: string, delay = 50) => {
 
   return addToQueue;
 };
+
+// Add regular utility function outside component
+const getBadgeStylesUtil = (mode: ModeType): string => {
+  switch (mode) {
+    case 'kid':
+      return 'bg-blue-100 text-blue-800 border-blue-200';
+    case 'expert':
+      return 'bg-purple-100 text-purple-800 border-purple-200';
+    case 'inshort':
+      return 'bg-green-100 text-green-800 border-green-200';
+    default:
+      return '';
+  }
+};
+
+// Add Memoized Badge Component
+const ModeBadge = memo(({ mode, className = '' }: BadgeProps) => {
+  if (!mode) return null;
+
+  const label = {
+    'kid': 'Kid-Friendly',
+    'expert': 'Expert',
+    'inshort': 'Concise'
+  }[mode];
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.9 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.9 }}
+      className={`mb-1 px-2 py-0.5 text-xs rounded-full border ${getBadgeStylesUtil(mode)} ${className}`}
+    >
+      {label}
+    </motion.div>
+  );
+});
+
+ModeBadge.displayName = 'ModeBadge';
 
 export function ChatClient({ modelName }: { modelName: string }) {
   const searchParams = useSearchParams();
@@ -119,6 +234,12 @@ export function ChatClient({ modelName }: { modelName: string }) {
     handleSubmit();
   });
   useHotkeys('esc', () => setShowSettings(false));
+
+
+  // Auto-scroll to bottom when messages change
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
 
   // Enhanced keyboard handling
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -299,16 +420,7 @@ export function ChatClient({ modelName }: { modelName: string }) {
 
   // Add helper function for badge styles
   const getBadgeStyles = (mode: 'kid' | 'expert' | 'inshort' | null) => {
-    switch (mode) {
-      case 'kid':
-        return 'bg-blue-100 text-blue-800 border-blue-200';
-      case 'expert':
-        return 'bg-purple-100 text-purple-800 border-purple-200';
-      case 'inshort':
-        return 'bg-green-100 text-green-800 border-green-200';
-      default:
-        return '';
-    }
+    return getBadgeStylesUtil(mode);
   };
 
   // Modified handleSubmit
@@ -455,30 +567,32 @@ export function ChatClient({ modelName }: { modelName: string }) {
     };
   }, []);
 
-  // Add useEffect to save preference
+  // Combined localStorage effect
   useEffect(() => {
-    localStorage.setItem('enableSuggestions', JSON.stringify(enableSuggestions));
-  }, [enableSuggestions]);
+    const savedSuggestions = safeLocalStorage.get(STORAGE_KEYS.SUGGESTIONS);
+    const savedMode = safeLocalStorage.get(STORAGE_KEYS.ACTIVE_MODE);
 
-  // Add this useEffect below other useEffect hooks:
-  useEffect(() => {
-    // Check localStorage after component mounts
-    const saved = localStorage.getItem('enableSuggestions');
-    if (saved !== null) {
-      setEnableSuggestions(JSON.parse(saved));
+    if (savedSuggestions !== null) {
+      setEnableSuggestions(savedSuggestions);
     }
-  }, []); // Empty dependency array means this runs once on mount
+    if (savedMode !== null) {
+      setActiveMode(savedMode as ModeType);
+    }
+  }, []);
 
-  // Add after other useEffects
+  // Memoized mode change handler
+  const handleModeChange = useCallback((mode: ModeType) => {
+    setActiveMode(currentMode => {
+      const newMode = currentMode === mode ? null : mode;
+      safeLocalStorage.set(STORAGE_KEYS.ACTIVE_MODE, newMode);
+      return newMode;
+    });
+  }, []);
+
+  // Save suggestions preference
   useEffect(() => {
-    localStorage.setItem('isKidMode', JSON.stringify(activeMode === 'kid'));
-  }, [activeMode]);
-
-  // Add handler for mode changes
-  const handleModeChange = (mode: 'kid' | 'expert' | 'inshort') => {
-    setActiveMode(currentMode => currentMode === mode ? null : mode);
-  };
-
+    safeLocalStorage.set(STORAGE_KEYS.SUGGESTIONS, enableSuggestions);
+  }, [enableSuggestions]);
 
   // UI Components
   return (
@@ -552,8 +666,8 @@ export function ChatClient({ modelName }: { modelName: string }) {
 
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col">
-        <div className="flex-1 overflow-y-auto px-4">
-          <div className="max-w-4xl mx-auto py-6 space-y-6">
+        <div className="flex-1 overflow-y-auto px-4 py-6">
+          <div className="max-w-4xl mx-auto space-y-4">
             {activeMode && (
               <div className={`inline-flex items-center px-3 py-1 rounded-full border ${getBadgeStyles(activeMode)} text-sm font-medium`}>
                 {activeMode === 'kid' && 'Kid-Friendly Mode'}
@@ -570,19 +684,20 @@ export function ChatClient({ modelName }: { modelName: string }) {
                   exit={{ opacity: 0, y: -20 }}
                   className={`flex flex-col ${message.role === 'user' ? 'items-end' : 'items-start'}`}
                 >
-                  {message.mode && (
-                    <div className={`mb-1 px-2 py-0.5 text-xs rounded-full border ${getBadgeStyles(message.mode)}`}>
-                      {message.mode === 'kid' && 'Kid-Friendly'}
-                      {message.mode === 'expert' && 'Expert'}
-                      {message.mode === 'inshort' && 'Concise'}
-                    </div>
-                  )}
-                  <div className={`flex items-start space-x-4 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                    {/* Existing message content */}
-                    <div className={`rounded-2xl px-6 py-3 max-w-[85%] ${
-                      message.role === 'user' ? 'bg-purple-600 text-white' : 'bg-gray-50 text-gray-800'
-                    }`}>
-                      <ReactMarkdown>
+                  {message.mode && <ModeBadge mode={message.mode} />}
+                  <div className={`flex items-start space-x-4 ${message.role === 'user' ? 'justify-end' : 'justify-start'} w-full`}>
+                    <div
+                      className={`rounded-2xl px-4 py-3 max-w-[85%] break-words ${message.role === 'user'
+                          ? 'bg-purple-600 text-white'
+                          : 'bg-gray-100 text-gray-800'
+                        }`}
+                    >
+                      <ReactMarkdown
+                        components={MarkdownComponents}
+                        remarkPlugins={[remarkGfm]}
+                        rehypePlugins={[rehypeRaw]}
+                        className="prose prose-sm max-w-full"
+                      >
                         {message.content}
                       </ReactMarkdown>
                     </div>
