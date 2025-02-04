@@ -196,7 +196,7 @@ export function ChatClient({ modelName }: { modelName: string }) {
   const [isLoading, setIsLoading] = useState(false);
   const [settings, setSettings] = useState<ChatSettings>({
     temperature: 0.7,
-    maxTokens: 2048,
+    maxTokens: 10000,
     systemPrompt: "You are a helpful AI assistant.",
   });
   const [showSettings, setShowSettings] = useState(false);
@@ -762,7 +762,7 @@ export function ChatClient({ modelName }: { modelName: string }) {
             </div>
             <form onSubmit={handleSubmit} className="relative">
               <div className="flex items-center gap-2 mb-2">
-                <span className="ml-auto text-sm text-gray-500">{input.length} / 2048</span>
+                <span className="ml-auto text-sm text-gray-500">{input.length} / 10000</span>
               </div>
               <textarea
                 ref={textareaRef}
